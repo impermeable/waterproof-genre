@@ -6,6 +6,10 @@ import WaterproofGenre
 
 $$`x + y = z`
 
+::: hint "test"
+please work
+:::
+
 ```lean
 def hello := "world"
 ```

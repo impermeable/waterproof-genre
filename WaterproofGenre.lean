@@ -4,13 +4,65 @@
 
 import Verso
 import VersoManual
+import Lean.Elab
 
 open Verso Doc
+open Lean (Name Json NameMap ToJson FromJson)
 
 -- make inline Lean blocks available to the users of this genre
 export Verso.Genre.Manual.InlineLean (lean)
 
 abbrev Block := Genre.Manual.Block
+
+structure HintConfig where
+  title : String
+
+block_extension Block.hint (title : String) where
+  data := ToJson.toJson (title)
+
+  traverse _ _ _ := pure none
+  toTeX := none
+
+  toHtml :=
+    open Verso.Doc.Html in
+    open Verso.Output.Html in
+    some <| fun _goI goB id data blocks => do
+      match FromJson.fromJson? data (α := String) with
+      | .error e =>
+        HtmlT.logError s!"Error : {e}"
+        return empty
+      | .ok (title) =>
+        pure {{
+          <details>
+            <summary>{{title}}</summary>
+              {{ ← blocks.mapM goB }}
+            </details>
+        }}
+
+section
+open Lean Elab
+open Verso ArgParse
+variable [Monad m] [MonadInfoTree m] [MonadLiftT CoreM m] [MonadEnv m] [MonadError m] [MonadFileMap m]
+
+
+def HintConfig.parse : ArgParse m HintConfig :=
+  HintConfig.mk <$> .positional `title .string
+
+instance : FromArgs HintConfig m := ⟨HintConfig.parse⟩
+
+end
+
+open Verso.Doc Elab
+open Lean.Quote
+open Lean Syntax
+
+@[directive]
+def hint : DirectiveExpanderOf HintConfig
+  | cfg, contents => do
+      --let blocks : Array (Syntax.TSepArray `term ",")
+      let blocks ← contents.mapM elabBlock
+      ``(Block.other (Block.hint $(quote cfg.title)) #[ $blocks ,* ])
+
 
 def WaterproofGenre : Genre where
   Inline := Empty
