@@ -3,45 +3,110 @@
 -- import WaterproofGenre.Demo
 
 import Verso
-import VersoManual
+--import VersoManual
 import Lean.Elab
+import SubVerso.Examples.Slice
+import SubVerso.Highlighting
+import Init.Data.ToString.Basic
 
 open Verso Doc
 open Lean (Name Json NameMap ToJson FromJson)
+open Lean Elab
+open Verso ArgParse
+
+open Verso.Doc Elab
+open Lean.Quote
+open Lean Syntax
+
+open SubVerso.Examples.Slice
+open SubVerso.Highlighting
 
 -- make inline Lean blocks available to the users of this genre
-export Verso.Genre.Manual.InlineLean (lean)
 
-abbrev Block := Genre.Manual.Block
+structure Block where
+  name : Name
+  id : String
 
 structure HintConfig where
   title : String
 
-block_extension Block.hint (title : String) where
-  data := ToJson.toJson (title)
 
-  traverse _ _ _ := pure none
-  toTeX := none
+------
 
-  toHtml :=
-    open Verso.Doc.Html in
-    open Verso.Output.Html in
-    some <| fun _goI goB id data blocks => do
-      match FromJson.fromJson? data (α := String) with
-      | .error e =>
-        HtmlT.logError s!"Error : {e}"
-        return empty
-      | .ok (title) =>
-        pure {{
-          <details>
-            <summary>{{title}}</summary>
-              {{ ← blocks.mapM goB }}
-            </details>
-        }}
+def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String := do
+  let preString := (← getFileMap).source.extract 0 (str.raw.getPos?.getD 0)
+  let mut code := ""
+  let mut iter := preString.iter
+  while !iter.atEnd do
+    if iter.curr == '\n' then code := code.push '\n'
+    else
+      for _ in [0:iter.curr.utf8Size] do
+        code := code.push ' '
+    iter := iter.next
+  code := code ++ str.getString
+  return code
+
+def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
+  dbg_trace "Processing {altStr}"
+  let ictx := Parser.mkInputContext altStr (← getFileName)
+  let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
+  let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}
+  let mut pstate := {pos := 0, recovering := false}
+  let mut exercises := #[]
+  let mut solutions := #[]
+
+  repeat
+    let scope := cmdState.scopes.head!
+    let pmctx := { env := cmdState.env, options := scope.opts, currNamespace := scope.currNamespace, openDecls := scope.openDecls }
+    let (cmd, ps', messages) := Parser.parseCommand ictx pmctx pstate cmdState.messages
+    pstate := ps'
+    cmdState := {cmdState with messages := messages}
+
+    -- dbg_trace "Unsliced is {cmd}"
+    let slices : Slices ← DocElabM.withFileMap (FileMap.ofString altStr) (sliceSyntax cmd)
+    let sol := slices.sliced.getD "solution" slices.residual
+    solutions := solutions.push sol
+
+    cmdState ← withInfoTreeContext (mkInfoTree := pure ∘ InfoTree.node (.ofCommandInfo {elaborator := `DemoTextbook.Exts.lean, stx := cmd})) do
+      let mut cmdState := cmdState
+      match (← liftM <| EIO.toIO' <| (Command.elabCommand sol cctx).run cmdState) with
+      | Except.error e => logError e.toMessageData
+      | Except.ok ((), s) =>
+        cmdState := s
+
+      pure cmdState
+
+    if Parser.isTerminalCommand cmd then break
+
+  setEnv cmdState.env
+  for t in cmdState.infoState.trees do
+    -- dbg_trace (← t.format)
+    pushInfoTree t
+
+  for msg in cmdState.messages.msgs do
+    logMessage msg
+
+  let mut hls := Highlighted.empty
+  for cmd in exercises do
+    hls := hls ++ (← highlight cmd cmdState.messages.msgs.toArray cmdState.infoState.trees)
+
+  pure #[]
+
+
+@[code_block_expander lean]
+def lean: CodeBlockExpander
+  | _, str => do
+    let altStr ← parserInputString str
+    processString altStr
+
+
+-- Add title argument so it doesnt break
+def Block.hint (title : String): Block where
+  name := `Block.hint
+  id := "hint"
+-----------
 
 section
-open Lean Elab
-open Verso ArgParse
 variable [Monad m] [MonadInfoTree m] [MonadLiftT CoreM m] [MonadEnv m] [MonadError m] [MonadFileMap m]
 
 
@@ -52,14 +117,9 @@ instance : FromArgs HintConfig m := ⟨HintConfig.parse⟩
 
 end
 
-open Verso.Doc Elab
-open Lean.Quote
-open Lean Syntax
-
 @[directive]
 def hint : DirectiveExpanderOf HintConfig
   | cfg, contents => do
-      --let blocks : Array (Syntax.TSepArray `term ",")
       let blocks ← contents.mapM elabBlock
       ``(Block.other (Block.hint $(quote cfg.title)) #[ $blocks ,* ])
 
