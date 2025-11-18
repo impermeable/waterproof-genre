@@ -3,16 +3,17 @@
 -- import WaterproofGenre.Demo
 
 import Verso
---import VersoManual
 import Lean.Elab
+import Verso.Doc
 import SubVerso.Examples.Slice
 import SubVerso.Highlighting
 import Init.Data.ToString.Basic
+import Verso.Code
 
 open Verso Doc
 open Lean (Name Json NameMap ToJson FromJson)
 open Lean Elab
-open Verso ArgParse
+open Verso ArgParse Html Code
 
 open Verso.Doc Elab
 open Lean.Quote
@@ -99,12 +100,52 @@ def lean: CodeBlockExpander
     let altStr ← parserInputString str
     processString altStr
 
-
--- Add title argument so it doesnt break
 def Block.hint (title : String): Block where
   name := `Block.hint
   id := "hint"
 -----------
+
+-- Multilean
+
+def Block.multilean : Block where
+  name := `Block.multilean
+  id := "Multilean"
+
+def extractString (stxs : Array Syntax) : DocElabM (String) := do
+  let mut code := ""
+  let mut lastIdx := 0
+  for stx in stxs do
+    match stx with
+    | `(block|``` $_nameStx:ident $_argsStx* | $contents:str ```) => do
+      let preString := (← getFileMap).source.extract lastIdx (contents.raw.getPos?.getD 0)
+      let mut iter := preString.iter
+      while !iter.atEnd do
+        if iter.curr == '\n' then
+          code := code.push '\n'
+        else
+          for _ in [0:iter.curr.utf8Size] do
+            code := code.push ' '
+        iter := iter.next
+
+      lastIdx := contents.raw.getTailPos?.getD lastIdx
+      code := (code ++ contents.getString)
+    | _ => pure ()
+  pure code
+
+@[directive_expander multilean]
+def multilean : DirectiveExpander
+  | #[], stxs => do
+    let str ← extractString stxs
+    let val ← processString str
+    -- let args ← stxs.mapM elabBlocko
+    -- Note that we do not actually pass any of the content here
+    -- To produce output, this would be needed.
+    let val ← ``(Block.other Block.multilean #[])
+    pure #[val]
+  | _, _ => Lean.Elab.throwUnsupportedSyntax
+
+
+-- End Multilean
 
 section
 variable [Monad m] [MonadInfoTree m] [MonadLiftT CoreM m] [MonadEnv m] [MonadError m] [MonadFileMap m]
