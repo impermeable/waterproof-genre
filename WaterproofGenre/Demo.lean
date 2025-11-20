@@ -13,3 +13,6 @@ please work plese please
 ```lean
 def hello := "world"
 ```
+
+:::input
+:::

@@ -143,6 +143,17 @@ def multilean : DirectiveExpander
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 
+def Block.input : Block where
+  name := `Block.input
+  id := "input"
+
+@[directive_expander input]
+def input : DirectiveExpander
+  | #[], stxs => do
+    let args ← stxs.mapM elabBlock
+    let val ← ``(Block.other Block.input #[ $[ $args ],* ])
+    pure #[val]
+  | _, _ => Lean.Elab.throwUnsupportedSyntax
 
 def WaterproofGenre : Genre where
   Inline := Empty
