@@ -4,7 +4,6 @@
 
 import Verso
 import Lean.Elab
-import Verso.Doc
 import SubVerso.Examples.Slice
 import SubVerso.Highlighting
 import Init.Data.ToString.Basic
@@ -22,17 +21,12 @@ open Lean Syntax
 open SubVerso.Examples.Slice
 open SubVerso.Highlighting
 
--- make inline Lean blocks available to the users of this genre
-
 structure Block where
   name : Name
   id : String
 
 structure HintConfig where
   title : String
-
-
-------
 
 def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String := do
   let preString := (← getFileMap).source.extract 0 (str.raw.getPos?.getD 0)
@@ -93,19 +87,24 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
 
   pure #[]
 
-
 @[code_block_expander lean]
-def lean: CodeBlockExpander
+def lean : CodeBlockExpander
   | _, str => do
     let altStr ← parserInputString str
     processString altStr
 
-def Block.hint (title : String): Block where
+def Block.hint : Block where
   name := `Block.hint
   id := "hint"
------------
 
--- Multilean
+@[directive_expander hint]
+def hint : DirectiveExpander
+  | args, contents => do
+    let title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
+    let blocks ← contents.mapM elabBlock
+    let val ← ``(Block.other Block.hint  #[ $blocks ,* ])
+    pure #[val]
+
 
 def Block.multilean : Block where
   name := `Block.multilean
@@ -145,84 +144,9 @@ def multilean : DirectiveExpander
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 
 
--- End Multilean
-
-section
-variable [Monad m] [MonadInfoTree m] [MonadLiftT CoreM m] [MonadEnv m] [MonadError m] [MonadFileMap m]
-
-
-def HintConfig.parse : ArgParse m HintConfig :=
-  HintConfig.mk <$> .positional `title .string
-
-instance : FromArgs HintConfig m := ⟨HintConfig.parse⟩
-
-end
-
-@[directive]
-def hint : DirectiveExpanderOf HintConfig
-  | cfg, contents => do
-      let blocks ← contents.mapM elabBlock
-      ``(Block.other (Block.hint $(quote cfg.title)) #[ $blocks ,* ])
-
-
 def WaterproofGenre : Genre where
   Inline := Empty
-  -- Block := Block.lean
   Block := Block
   PartMetadata := Unit
   TraverseContext := Unit
   TraverseState := Unit
-
-namespace WaterproofGenre
-
-open Verso.Output Html
-
-instance : TraversePart WaterproofGenre := {}
-instance : TraverseBlock WaterproofGenre := {}
-
-abbrev TraverseM := ReaderT WaterproofGenre.TraverseContext (StateT Unit Id)
-
-instance : Traverse WaterproofGenre TraverseM where
-  part _ := pure none
-  block _ := pure ()
-  inline _ := pure ()
-  genrePart _ _ := pure none
-  genreBlock _ _ := do pure none
-  genreInline _ _ := pure none
-
-instance : GenreHtml WaterproofGenre IO where
-  -- part recur metadata p := pure {{<span>{{"hello"}}</span>}}
-  part recur metadata
-    | .mk title titleString _ content subParts =>
-        recur (.mk title titleString none content subParts)
-  block inlineToHtml recur blkExt blocks := blocks.mapM recur
-  inline _ i := nomatch i
-
-def render (doc : Part WaterproofGenre) : IO UInt32 := do
-  let hadError ← IO.mkRef false
-  let logError str := do
-    hadError.set true
-    IO.eprintln str
-
-  let (content, _) ← WaterproofGenre.toHtml {logError} () () {} {} {} doc .empty
-  let html := {{
-    <html>
-      <head>
-        <title>{{ doc.titleString }}</title>
-        <meta charset="utf-8"/>
-      </head>
-      <body>{{ content }}</body>
-    </html>
-  }}
-
-  IO.println "Writing to index.html"
-  IO.FS.withFile "index.html" .write fun h => do
-    h.putStrLn html.asString
-
-  if (← hadError.get) then
-    IO.eprintln "Errors occurred while rendering"
-    pure 1
-  else
-    pure 0
-
-end WaterproofGenre

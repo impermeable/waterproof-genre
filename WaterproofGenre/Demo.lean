@@ -7,7 +7,7 @@ import WaterproofGenre
 $$`x + y = z`
 
 ::: hint "test"
-please work
+please work plese please
 :::
 
 ```lean
