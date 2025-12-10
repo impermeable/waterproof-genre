@@ -6,13 +6,21 @@ import WaterproofGenre
 
 $$`x + y = z`
 
-::: hint "test"
-please work plese please
+:::hint "Hint here"
+This is a hint
 :::
 
+::::multilean
 ```lean
-def hello := "world"
+def hello :=
+"Hello"
 ```
-
 :::input
+```lean
+++ "World!"
+```
 :::
+```lean
+++ "!"
+```
+::::
