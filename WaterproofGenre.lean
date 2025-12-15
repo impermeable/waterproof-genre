@@ -110,7 +110,7 @@ def Block.multilean : Block where
   name := `Block.multilean
   id := "Multilean"
 
-def extractString (stxs : Array Syntax) : DocElabM (String) := do
+partial def extractString (stxs : Array Syntax) : DocElabM (String × String.Pos) := do
   let mut code := ""
   let mut lastIdx := 0
   for stx in stxs do
@@ -128,13 +128,19 @@ def extractString (stxs : Array Syntax) : DocElabM (String) := do
 
       lastIdx := contents.raw.getTailPos?.getD lastIdx
       code := (code ++ contents.getString)
-    | _ => pure ()
-  pure code
+    | _ => do
+      match stx.getArgs with
+      | #[] => pure ()
+      | args => do
+        let (str, idx) ← extractString args
+        lastIdx := idx
+        code := code ++ str
+  pure (code, lastIdx)
 
 @[directive_expander multilean]
 def multilean : DirectiveExpander
   | #[], stxs => do
-    let str ← extractString stxs
+    let (str, _) ← (extractString stxs)
     let val ← processString str
     -- let args ← stxs.mapM elabBlocko
     -- Note that we do not actually pass any of the content here

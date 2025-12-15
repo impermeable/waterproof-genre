@@ -13,14 +13,18 @@ This is a hint
 ::::multilean
 ```lean
 def hello :=
-"Hello"
+"Hello, " ++
 ```
+
 :::input
 ```lean
-++ "World!"
+"World"
 ```
 :::
+
 ```lean
 ++ "!"
+
+#eval hello
 ```
 ::::
