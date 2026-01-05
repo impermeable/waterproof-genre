@@ -8,6 +8,7 @@ import SubVerso.Examples.Slice
 import SubVerso.Highlighting
 import Init.Data.ToString.Basic
 import Verso.Code
+import WaterproofGenre.GoalWidget
 
 open Verso Doc
 open Lean (Name Json NameMap ToJson FromJson)
