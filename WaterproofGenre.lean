@@ -47,14 +47,16 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
   let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
   let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}
   let mut pstate := {pos := 0, recovering := false}
-  let mut exercises := #[]
-
   repeat
     let scope := cmdState.scopes.head!
     let pmctx := { env := cmdState.env, options := scope.opts, currNamespace := scope.currNamespace, openDecls := scope.openDecls }
     let (cmd, ps', messages) := Parser.parseCommand ictx pmctx pstate cmdState.messages
     pstate := ps'
     cmdState := {cmdState with messages := messages}
+
+    -- Clear accumulated info trees before elaboration so we can identify the new ones
+    let savedTrees := cmdState.infoState.trees
+    cmdState := {cmdState with infoState := {cmdState.infoState with trees := {}}}
 
     cmdState ← withInfoTreeContext (mkInfoTree := pure ∘ InfoTree.node (.ofCommandInfo {elaborator := `DemoTextbook.Exts.lean, stx := cmd})) do
       let mut cmdState := cmdState
@@ -63,21 +65,17 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
       | Except.ok ((), s) =>
         cmdState := s
 
-      pure cmdState
+      -- Push new info trees into DocElabM so they become children of the CommandInfo node
+      for t in cmdState.infoState.trees do
+        pushInfoTree t
+      pure {cmdState with infoState := {cmdState.infoState with trees := savedTrees}}
 
     if Parser.isTerminalCommand cmd then break
 
   setEnv cmdState.env
-  for t in cmdState.infoState.trees do
-    -- dbg_trace (← t.format)
-    pushInfoTree t
 
-  for msg in cmdState.messages.unreported do
+  for msg in cmdState.messages.toArray do
     logMessage msg
-
-  let mut hls := Highlighted.empty
-  for cmd in exercises do
-    hls := hls ++ (← highlight cmd cmdState.messages.unreported.toArray cmdState.infoState.trees)
 
   pure #[]
 
