@@ -43,7 +43,7 @@ def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String
   return code
 
 def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
-  dbg_trace "Processing {altStr}"
+  -- dbg_trace "Processing {altStr}"
   let ictx := Parser.mkInputContext altStr (← getFileName)
   let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
   let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}

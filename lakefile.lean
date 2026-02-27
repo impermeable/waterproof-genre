@@ -14,3 +14,6 @@ lean_lib WaterproofGenre where
 @[default_target]
 lean_exe "waterproofgenre" where
   root := `WaterproofGenreMain
+
+lean_exe "test-demo" where
+  root := `TestDemoMain
