@@ -28,7 +28,7 @@ structure HintConfig where
   title : String
 
 def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String := do
-  let preString := (← getFileMap).source.extract 0 (str.raw.getPos?.getD 0)
+  let preString := String.Pos.Raw.extract (← getFileMap).source 0 (str.raw.getPos?.getD 0)
   let mut code := ""
   let mut iter := preString.iter
   while !iter.atEnd do
@@ -70,7 +70,7 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
     -- dbg_trace (← t.format)
     pushInfoTree t
 
-  for msg in cmdState.messages.msgs do
+  for msg in cmdState.messages.unreported do
     logMessage msg
 
   pure #[]
@@ -88,7 +88,7 @@ def Block.hint : Block where
 @[directive_expander hint]
 def hint : DirectiveExpander
   | args, contents => do
-    let title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
+    let _title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
     let blocks ← contents.mapM elabBlock
     let val ← ``(Block.other Block.hint  #[ $blocks ,* ])
     pure #[val]
@@ -98,14 +98,14 @@ def Block.multilean : Block where
   name := `Block.multilean
   id := "Multilean"
 
-partial def extractString (stxs : Array Syntax) (start : String.Pos := String.Pos.Raw.mk 0) : DocElabM (String × String.Pos):= do
+partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := String.Pos.Raw.mk 0) : DocElabM (String × String.Pos.Raw):= do
   let mut code := ""
   let mut lastIdx := start
 
   for stx in stxs do
     match stx with
     | `(block|``` $_nameStx:ident $_argsStx* | $contents:str ```) => do
-      let preString := (← getFileMap).source.extract lastIdx (contents.raw.getPos?.getD 0)
+      let preString := String.Pos.Raw.extract (← getFileMap).source lastIdx (contents.raw.getPos?.getD 0)
       let mut iter := preString.iter
       while !iter.atEnd do
         if iter.curr == '\n' then
@@ -130,7 +130,7 @@ partial def extractString (stxs : Array Syntax) (start : String.Pos := String.Po
 def multilean : DirectiveExpander
   | #[], stxs => do
     let (str, _) ← extractString stxs
-    let val ← processString str
+    let _val ← processString str
     -- let args ← stxs.mapM elabBlocko
     -- Note that we do not actually pass any of the content here
     -- To produce output, this would be needed.
