@@ -16,6 +16,7 @@ open Verso ArgParse Html Code
 open Verso.Doc Elab
 open Lean.Quote
 open Lean Syntax
+open Lean.Doc.Syntax
 
 
 
@@ -97,7 +98,7 @@ def Block.multilean : Block where
   name := `Block.multilean
   id := "Multilean"
 
-partial def extractString (stxs : Array Syntax) (start : String.Pos := String.Pos.mk 0) : DocElabM (String × String.Pos):= do
+partial def extractString (stxs : Array Syntax) (start : String.Pos := String.Pos.Raw.mk 0) : DocElabM (String × String.Pos):= do
   let mut code := ""
   let mut lastIdx := start
 
