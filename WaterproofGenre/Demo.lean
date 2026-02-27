@@ -10,6 +10,12 @@ $$`x + y = z`
 This is a hint
 :::
 
+```lean
+theorem singleTest : 1 + 2 = 5 := by
+
+  sorry
+```
+
 ::::multilean
 ```lean
 def hello :=
