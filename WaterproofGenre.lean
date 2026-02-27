@@ -69,7 +69,7 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
     -- dbg_trace (← t.format)
     pushInfoTree t
 
-  for msg in cmdState.messages.msgs do
+  for msg in cmdState.messages.toList do
     logMessage msg
 
   pure #[]
