@@ -4,8 +4,6 @@
 
 import Verso
 import Lean.Elab
-import SubVerso.Examples.Slice
-import SubVerso.Highlighting
 import Init.Data.ToString.Basic
 import Verso.Code
 import WaterproofGenre.GoalWidget
@@ -19,8 +17,7 @@ open Verso.Doc Elab
 open Lean.Quote
 open Lean Syntax
 
-open SubVerso.Examples.Slice
-open SubVerso.Highlighting
+
 
 structure Block where
   name : Name
@@ -48,8 +45,6 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
   let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
   let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}
   let mut pstate := {pos := 0, recovering := false}
-  let mut exercises := #[]
-  let mut solutions := #[]
 
   repeat
     let scope := cmdState.scopes.head!
@@ -58,14 +53,9 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
     pstate := ps'
     cmdState := {cmdState with messages := messages}
 
-    -- dbg_trace "Unsliced is {cmd}"
-    let slices : Slices ← DocElabM.withFileMap (FileMap.ofString altStr) (sliceSyntax cmd)
-    let sol := slices.sliced.getD "solution" slices.residual
-    solutions := solutions.push sol
-
     cmdState ← withInfoTreeContext (mkInfoTree := pure ∘ InfoTree.node (.ofCommandInfo {elaborator := `DemoTextbook.Exts.lean, stx := cmd})) do
       let mut cmdState := cmdState
-      match (← liftM <| EIO.toIO' <| (Command.elabCommand sol cctx).run cmdState) with
+      match (← liftM <| EIO.toIO' <| (Command.elabCommand cmd cctx).run cmdState) with
       | Except.error e => logError e.toMessageData
       | Except.ok ((), s) =>
         cmdState := s
@@ -81,10 +71,6 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
 
   for msg in cmdState.messages.msgs do
     logMessage msg
-
-  let mut hls := Highlighted.empty
-  for cmd in exercises do
-    hls := hls ++ (← highlight cmd cmdState.messages.msgs.toArray cmdState.infoState.trees)
 
   pure #[]
 
