@@ -99,8 +99,8 @@ def main : IO UInt32 := do
     failed := true
 
   -- Check that the sorry warning is present
-  unless hasSubstr output "declaration uses 'sorry'" do
-    IO.eprintln "FAIL: expected 'declaration uses 'sorry'' warning in output"
+  unless hasSubstr output "declaration uses `sorry`" do
+    IO.eprintln "FAIL: expected 'declaration uses `sorry`' warning in output"
     IO.eprintln s!"  output was: {output}"
     failed := true
 
