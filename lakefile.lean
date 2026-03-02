@@ -1,7 +1,7 @@
 import Lake
 open Lake DSL
 
-require «verso» from git "https://github.com/leanprover/verso.git"@"main"
+require «verso» from git "https://github.com/leanprover/verso.git"@"v4.29.0-rc3"
 require «proofwidgets» from git "https://github.com/leanprover-community/ProofWidgets4"@"v0.0.90"
 
 package "WaterproofGenre" where

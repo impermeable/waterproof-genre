@@ -5,6 +5,7 @@
 import Verso
 import Lean.Elab
 import Lean.DocString.Syntax
+import SubVerso.Highlighting
 import Init.Data.ToString.Basic
 import Verso.Code
 import WaterproofGenre.GoalWidget
@@ -18,8 +19,7 @@ open Verso.Doc Elab
 open Lean.Quote
 open Lean Doc Syntax
 
-
-
+open SubVerso.Highlighting
 
 structure Block where
   name : Name
@@ -29,7 +29,7 @@ structure HintConfig where
   title : String
 
 def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String := do
-  let preString := (0 : String.Pos.Raw).extract (← getFileMap).source (str.raw.getPos?.getD 0)
+  let preString := String.Pos.Raw.extract (← getFileMap).source 0 (str.raw.getPos?.getD 0)
   let mut code := ""
   let mut iter := preString.startPos
   while h : iter ≠ preString.endPos do
@@ -48,6 +48,7 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
   let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
   let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}
   let mut pstate := {pos := 0, recovering := false}
+  let mut exercises := #[]
 
   repeat
     let scope := cmdState.scopes.head!
@@ -72,8 +73,12 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
     -- dbg_trace (← t.format)
     pushInfoTree t
 
-  for msg in cmdState.messages.toArray do
+  for msg in cmdState.messages.unreported do
     logMessage msg
+
+  let mut hls := Highlighted.empty
+  for cmd in exercises do
+    hls := hls ++ (← highlight cmd cmdState.messages.unreported.toArray cmdState.infoState.trees)
 
   pure #[]
 
@@ -90,7 +95,7 @@ def Block.hint : Block where
 @[directive_expander hint]
 def hint : DirectiveExpander
   | args, contents => do
-    let title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
+    let _title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
     let blocks ← contents.mapM elabBlock
     let val ← ``(Verso.Doc.Block.other Block.hint  #[ $blocks ,* ])
     pure #[val]
@@ -133,7 +138,7 @@ partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := 0) : 
 def multilean : DirectiveExpander
   | #[], stxs => do
     let (str, _) ← extractString stxs
-    let val ← processString str
+    let _val ← processString str
     -- let args ← stxs.mapM elabBlocko
     -- Note that we do not actually pass any of the content here
     -- To produce output, this would be needed.
