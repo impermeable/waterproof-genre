@@ -1,6 +1,6 @@
 import WaterproofGenre
 
-#old_doc (WaterproofGenre) "Index" =>
+#doc (WaterproofGenre) "Index" =>
 
 # Header
 

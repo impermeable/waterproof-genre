@@ -4,6 +4,7 @@
 
 import Verso
 import Lean.Elab
+import Lean.DocString.Syntax
 import Init.Data.ToString.Basic
 import Verso.Code
 import WaterproofGenre.GoalWidget
@@ -15,7 +16,8 @@ open Verso ArgParse Html Code
 
 open Verso.Doc Elab
 open Lean.Quote
-open Lean Syntax
+open Lean Doc Syntax
+
 
 
 
@@ -27,15 +29,16 @@ structure HintConfig where
   title : String
 
 def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String := do
-  let preString := (← getFileMap).source.extract 0 (str.raw.getPos?.getD 0)
+  let preString := (0 : String.Pos.Raw).extract (← getFileMap).source (str.raw.getPos?.getD 0)
   let mut code := ""
-  let mut iter := preString.iter
-  while !iter.atEnd do
-    if iter.curr == '\n' then code := code.push '\n'
+  let mut iter := preString.startPos
+  while h : iter ≠ preString.endPos do
+    let iter' := iter.next h
+    if iter.get h == '\n' then code := code.push '\n'
     else
-      for _ in [0:iter.curr.utf8Size] do
+      for _ in [0:iter.get h |>.utf8Size] do
         code := code.push ' '
-    iter := iter.next
+    iter := iter'
   code := code ++ str.getString
   return code
 
@@ -69,12 +72,12 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
     -- dbg_trace (← t.format)
     pushInfoTree t
 
-  for msg in cmdState.messages.msgs do
+  for msg in cmdState.messages.toArray do
     logMessage msg
 
   pure #[]
 
-@[code_block_expander lean]
+@[code_block_expander _root_.lean]
 def lean : CodeBlockExpander
   | _, str => do
     let altStr ← parserInputString str
@@ -89,7 +92,7 @@ def hint : DirectiveExpander
   | args, contents => do
     let title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
     let blocks ← contents.mapM elabBlock
-    let val ← ``(Block.other Block.hint  #[ $blocks ,* ])
+    let val ← ``(Verso.Doc.Block.other Block.hint  #[ $blocks ,* ])
     pure #[val]
 
 
@@ -97,22 +100,23 @@ def Block.multilean : Block where
   name := `Block.multilean
   id := "Multilean"
 
-partial def extractString (stxs : Array Syntax) (start : String.Pos := String.Pos.mk 0) : DocElabM (String × String.Pos):= do
+partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := 0) : DocElabM (String × String.Pos.Raw):= do
   let mut code := ""
   let mut lastIdx := start
 
   for stx in stxs do
     match stx with
     | `(block|``` $_nameStx:ident $_argsStx* | $contents:str ```) => do
-      let preString := (← getFileMap).source.extract lastIdx (contents.raw.getPos?.getD 0)
-      let mut iter := preString.iter
-      while !iter.atEnd do
-        if iter.curr == '\n' then
+      let preString := lastIdx.extract (← getFileMap).source (contents.raw.getPos?.getD 0)
+      let mut iter := preString.startPos
+      while h : iter ≠ preString.endPos do
+        let iter' := iter.next h
+        if iter.get h == '\n' then
           code := code.push '\n'
         else
-          for _ in [0:iter.curr.utf8Size] do
+          for _ in [0:iter.get h |>.utf8Size] do
             code := code.push ' '
-        iter := iter.next
+        iter := iter'
 
       lastIdx := contents.raw.getTailPos?.getD lastIdx
       code := (code ++ contents.getString)
@@ -133,7 +137,7 @@ def multilean : DirectiveExpander
     -- let args ← stxs.mapM elabBlocko
     -- Note that we do not actually pass any of the content here
     -- To produce output, this would be needed.
-    let val ← ``(Block.other Block.multilean #[])
+    let val ← ``(Verso.Doc.Block.other Block.multilean #[])
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 
@@ -145,7 +149,7 @@ def Block.input : Block where
 def input : DirectiveExpander
   | #[], stxs => do
     let args ← stxs.mapM elabBlock
-    let val ← ``(Block.other Block.input #[ $[ $args ],* ])
+    let val ← ``(Verso.Doc.Block.other Block.input #[ $[ $args ],* ])
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 
