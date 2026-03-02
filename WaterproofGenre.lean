@@ -54,21 +54,25 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
     pstate := ps'
     cmdState := {cmdState with messages := messages}
 
-    cmdState ← withInfoTreeContext (mkInfoTree := pure ∘ InfoTree.node (.ofCommandInfo {elaborator := `DemoTextbook.Exts.lean, stx := cmd})) do
-      let mut cmdState := cmdState
-      match (← liftM <| EIO.toIO' <| (Command.elabCommand cmd cctx).run cmdState) with
-      | Except.error e => logError e.toMessageData
-      | Except.ok ((), s) =>
-        cmdState := s
-
-      pure cmdState
+    -- NOTE: we intentionally do NOT wrap each command in `withInfoTreeContext` here.
+    -- Doing so would create empty CommandInfo wrapper nodes that appear before the
+    -- actual info trees in the PersistentArray. Since the Lean server's `doElab`
+    -- takes only `trees[0]!` from the command's info state, those empty wrappers
+    -- would shadow the real TacticInfo trees and prevent goals from being displayed.
+    match (← liftM <| EIO.toIO' <| (Command.elabCommand cmd cctx).run cmdState) with
+    | Except.error e => logError e.toMessageData
+    | Except.ok ((), s) =>
+      cmdState := s
 
     if Parser.isTerminalCommand cmd then break
 
   setEnv cmdState.env
-  for t in cmdState.infoState.trees do
-    -- dbg_trace (← t.format)
-    pushInfoTree t
+  -- Push all inner info trees as children of a single wrapper node.
+  -- This is critical because `doElab` in Language/Lean.lean takes only `trees[0]!`.
+  -- By wrapping everything in one node, we ensure all TacticInfo is reachable.
+  pushInfoTree <| InfoTree.node
+    (.ofCommandInfo {elaborator := `WaterproofGenre.processString, stx := .missing})
+    cmdState.infoState.trees
 
   for msg in cmdState.messages.toList do
     logMessage msg
@@ -220,3 +224,45 @@ def patchedReplaceDoc : CommandElab
   | _ => throwUnsupportedSyntax
 
 end VersoPatch
+/-!
+## Monkeypatch: wrap block elaboration in a single info tree node
+
+In Lean 4.21.0's incremental frontend (`Language/Lean.lean`), `doElab` creates a snapshot with
+`infoTree? := infoSt.trees[0]!` — only the FIRST info tree is used. For a normal Lean command,
+`liftTermElabM`'s `withSaveInfoContext` wraps the entire elaboration in a single tree, so this
+works fine.
+
+But for `addBlockCmd`, the inner term elaboration produces multiple trees at the top level:
+- Genre elaboration tree (from `Term.elabTerm genre` in `runVersoBlock`)
+- Trees from `processString` (with the actual `TacticInfo` nodes for goals)
+
+Since `trees[0]!` picks the genre tree (which has no `TacticInfo`), `goalsAt?` never finds any
+goals and the infoview shows nothing.
+
+Fix: wrap the `runVersoBlock` call in `withInfoContext` so that ALL trees from the term elaboration
+(genre + code block info) are children of a single `InfoTree.node`. This node becomes `trees[0]!`,
+and `goalsAt?` correctly traverses into its children to find `TacticInfo`.
+-/
+section InfoTreePatch
+
+open Verso.Doc.Concrete in
+open Lean Elab Command in
+@[command_elab Verso.Doc.Concrete.addBlockCmd]
+def patchedElabVersoBlock : CommandElab
+  | `(addBlockCmd| $b:block $genre:term) => do
+    withInfoContext
+      (runVersoBlock genre b)
+      (pure <| Info.ofCommandInfo {elaborator := `WaterproofGenre.addBlockCmd, stx := ← getRef})
+  | _ => throwUnsupportedSyntax
+
+open Verso.Doc.Concrete in
+open Lean Elab Command in
+@[command_elab Verso.Doc.Concrete.addLastBlockCmd]
+def patchedElabVersoLastBlock : CommandElab
+  | `(addLastBlockCmd| $b:block $genre:term $title:str) => do
+    withInfoContext
+      (do runVersoBlock genre b; finishDoc genre title)
+      (pure <| Info.ofCommandInfo {elaborator := `WaterproofGenre.addLastBlockCmd, stx := ← getRef})
+  | _ => throwUnsupportedSyntax
+
+end InfoTreePatch
