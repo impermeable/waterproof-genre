@@ -4,6 +4,7 @@
 
 import Verso
 import Lean.Elab
+import Lean.DocString.Syntax
 import SubVerso.Highlighting
 import Init.Data.ToString.Basic
 import Verso.Code
@@ -16,8 +17,7 @@ open Verso ArgParse Html Code
 
 open Verso.Doc Elab
 open Lean.Quote
-open Lean Syntax
-open Lean.Doc.Syntax
+open Lean Doc Syntax
 
 open SubVerso.Highlighting
 
@@ -31,18 +31,19 @@ structure HintConfig where
 def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String := do
   let preString := String.Pos.Raw.extract (← getFileMap).source 0 (str.raw.getPos?.getD 0)
   let mut code := ""
-  let mut iter := preString.iter
-  while !iter.atEnd do
-    if iter.curr == '\n' then code := code.push '\n'
+  let mut iter := preString.startPos
+  while h : iter ≠ preString.endPos do
+    let iter' := iter.next h
+    if iter.get h == '\n' then code := code.push '\n'
     else
-      for _ in [0:iter.curr.utf8Size] do
+      for _ in [0:iter.get h |>.utf8Size] do
         code := code.push ' '
-    iter := iter.next
+    iter := iter'
   code := code ++ str.getString
   return code
 
 def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
-  dbg_trace "Processing {altStr}"
+  -- dbg_trace "Processing {altStr}"
   let ictx := Parser.mkInputContext altStr (← getFileName)
   let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
   let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}
@@ -81,7 +82,7 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
 
   pure #[]
 
-@[code_block_expander lean]
+@[code_block_expander _root_.lean]
 def lean : CodeBlockExpander
   | _, str => do
     let altStr ← parserInputString str
@@ -96,7 +97,7 @@ def hint : DirectiveExpander
   | args, contents => do
     let _title ←  ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
     let blocks ← contents.mapM elabBlock
-    let val ← ``(Block.other Block.hint  #[ $blocks ,* ])
+    let val ← ``(Verso.Doc.Block.other Block.hint  #[ $blocks ,* ])
     pure #[val]
 
 
@@ -104,23 +105,23 @@ def Block.multilean : Block where
   name := `Block.multilean
   id := "Multilean"
 
-partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := String.Pos.Raw.mk 0) : DocElabM (String × String.Pos.Raw):= do
-
+partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := 0) : DocElabM (String × String.Pos.Raw):= do
   let mut code := ""
   let mut lastIdx := start
 
   for stx in stxs do
     match stx with
-    | `(codeblock|``` $_nameStx:ident $_argsStx* | $contents:str ```) => do
-      let preString := String.Pos.Raw.extract (← getFileMap).source lastIdx (contents.raw.getPos?.getD 0)
-      let mut iter := preString.iter
-      while !iter.atEnd do
-        if iter.curr == '\n' then
+    | `(block|``` $_nameStx:ident $_argsStx* | $contents:str ```) => do
+      let preString := lastIdx.extract (← getFileMap).source (contents.raw.getPos?.getD 0)
+      let mut iter := preString.startPos
+      while h : iter ≠ preString.endPos do
+        let iter' := iter.next h
+        if iter.get h == '\n' then
           code := code.push '\n'
         else
-          for _ in [0:iter.curr.utf8Size] do
+          for _ in [0:iter.get h |>.utf8Size] do
             code := code.push ' '
-        iter := iter.next
+        iter := iter'
 
       lastIdx := contents.raw.getTailPos?.getD lastIdx
       code := (code ++ contents.getString)
@@ -141,7 +142,7 @@ def multilean : DirectiveExpander
     -- let args ← stxs.mapM elabBlocko
     -- Note that we do not actually pass any of the content here
     -- To produce output, this would be needed.
-    let val ← ``(Block.other Block.multilean #[])
+    let val ← ``(Verso.Doc.Block.other Block.multilean #[])
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 
@@ -153,7 +154,7 @@ def Block.input : Block where
 def input : DirectiveExpander
   | #[], stxs => do
     let args ← stxs.mapM elabBlock
-    let val ← ``(Block.other Block.input #[ $[ $args ],* ])
+    let val ← ``(Verso.Doc.Block.other Block.input #[ $[ $args ],* ])
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 

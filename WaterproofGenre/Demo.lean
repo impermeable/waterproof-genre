@@ -28,3 +28,21 @@ def hello :=
 #eval hello
 ```
 ::::
+
+::::multilean
+```lean
+theorem test : 5 + 5 = 10 := by
+```
+
+:::input
+```lean
+  have : 1 + 2 = 3 := by
+
+    sorry
+```
+:::
+
+```lean
+  sorry
+```
+::::
