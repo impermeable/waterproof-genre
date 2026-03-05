@@ -10,6 +10,22 @@ import Init.Data.ToString.Basic
 import Verso.Code
 import WaterproofGenre.GoalWidget
 
+open SubVerso.Highlighting
+open Lean (Json ToJson FromJson)
+
+inductive Block where
+  | leanHighlighted (highlighted : Highlighted)
+  | multilean (highlighted : Highlighted)
+  | hint
+  | input
+  deriving BEq, ToJson, FromJson
+
+section
+local instance : Repr Json where
+  reprPrec v := Repr.addAppParen <| "json%" ++ v.render
+deriving instance Repr for Block
+end
+
 open Verso Doc
 open Lean (Name Json NameMap ToJson FromJson)
 open Lean Elab
@@ -18,12 +34,6 @@ open Verso ArgParse Html Code
 open Verso.Doc Elab
 open Lean.Quote
 open Lean Doc Syntax
-
-open SubVerso.Highlighting
-
-structure Block where
-  name : Name
-  id : String
 
 structure HintConfig where
   title : String
@@ -42,13 +52,12 @@ def parserInputString [Monad m] [MonadFileMap m] (str : TSyntax `str) : m String
   code := code ++ str.getString
   return code
 
-def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
-  -- dbg_trace "Processing {altStr}"
+def processString (altStr : String) : DocElabM Highlighted := do
   let ictx := Parser.mkInputContext altStr (← getFileName)
   let cctx : Command.Context := { fileName := ← getFileName, fileMap := FileMap.ofString altStr, cancelTk? := none, snap? := none}
   let mut cmdState : Command.State := {env := ← getEnv, maxRecDepth := ← MonadRecDepth.getMaxRecDepth, scopes := [{header := ""}, {header := ""}]}
   let mut pstate := {pos := 0, recovering := false}
-  let mut exercises := #[]
+  let mut cmds := #[]
 
   repeat
     let scope := cmdState.scopes.head!
@@ -66,31 +75,40 @@ def processString (altStr : String) :  DocElabM (Array (TSyntax `term)) := do
 
       pure cmdState
 
+    cmds := cmds.push cmd
     if Parser.isTerminalCommand cmd then break
 
   setEnv cmdState.env
   for t in cmdState.infoState.trees do
-    -- dbg_trace (← t.format)
     pushInfoTree t
 
   for msg in cmdState.messages.unreported do
     logMessage msg
 
+  -- Highlight syntax following the Verso pattern: temporarily switch to the
+  -- elaborated env/infoState so that `highlight` can resolve references.
   let mut hls := Highlighted.empty
-  for cmd in exercises do
-    hls := hls ++ (← highlight cmd cmdState.messages.unreported.toArray cmdState.infoState.trees)
+  let origInfoSt ← getInfoState
+  let origEnv ← getEnv
+  try
+    setInfoState cmdState.infoState
+    setEnv cmdState.env
+    let msgs := cmdState.messages.unreported.toArray
+    for cmd in cmds do
+      hls := hls ++ (← highlight cmd msgs cmdState.infoState.trees)
+  finally
+    setInfoState origInfoSt
+    setEnv origEnv
 
-  pure #[]
+  pure hls
 
 @[code_block_expander _root_.lean]
 def lean : CodeBlockExpander
   | _, str => do
     let altStr ← parserInputString str
-    processString altStr
-
-def Block.hint : Block where
-  name := `Block.hint
-  id := "hint"
+    let hls ← processString altStr
+    pure #[← ``(Verso.Doc.Block.other (Block.leanHighlighted $(quote hls))
+      #[Verso.Doc.Block.code $(quote str.getString)])]
 
 @[directive_expander hint]
 def hint : DirectiveExpander
@@ -99,11 +117,6 @@ def hint : DirectiveExpander
     let blocks ← contents.mapM elabBlock
     let val ← ``(Verso.Doc.Block.other Block.hint  #[ $blocks ,* ])
     pure #[val]
-
-
-def Block.multilean : Block where
-  name := `Block.multilean
-  id := "Multilean"
 
 partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := 0) : DocElabM (String × String.Pos.Raw):= do
   let mut code := ""
@@ -138,17 +151,11 @@ partial def extractString (stxs : Array Syntax) (start : String.Pos.Raw := 0) : 
 def multilean : DirectiveExpander
   | #[], stxs => do
     let (str, _) ← extractString stxs
-    let _val ← processString str
-    -- let args ← stxs.mapM elabBlocko
-    -- Note that we do not actually pass any of the content here
-    -- To produce output, this would be needed.
-    let val ← ``(Verso.Doc.Block.other Block.multilean #[])
+    let hls ← processString str
+    let val ← ``(Verso.Doc.Block.other (Block.multilean $(quote hls))
+      #[Verso.Doc.Block.code $(quote str)])
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax
-
-def Block.input : Block where
-  name := `Block.input
-  id := "input"
 
 @[directive_expander input]
 def input : DirectiveExpander
@@ -164,3 +171,8 @@ def WaterproofGenre : Genre where
   PartMetadata := Unit
   TraverseContext := Unit
   TraverseState := Unit
+
+instance : BEq WaterproofGenre.Block := inferInstanceAs (BEq Block)
+instance : Repr WaterproofGenre.Block := inferInstanceAs (Repr Block)
+instance : ToJson WaterproofGenre.Block := inferInstanceAs (ToJson Block)
+instance : FromJson WaterproofGenre.Block := inferInstanceAs (FromJson Block)
