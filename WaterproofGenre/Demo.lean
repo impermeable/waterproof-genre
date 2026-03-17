@@ -1,6 +1,7 @@
 import WaterproofGenre
+open Verso.Genre.Manual.InlineLean
 
-#doc (WaterproofGenre) "Index" =>
+#doc (Verso.Genre.Manual) "Index" =>
 
 # Header
 

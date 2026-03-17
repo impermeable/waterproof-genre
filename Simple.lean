@@ -1,4 +1,4 @@
-import VersoManual
+import WaterproofGenre
 open Verso.Genre.Manual.InlineLean
 
 #doc (Verso.Genre.Manual) "Index" =>
