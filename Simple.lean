@@ -4,6 +4,7 @@ open Verso.Genre.Manual.InlineLean
 #doc (Verso.Genre.Manual) "Index" =>
 
 ```lean
+/- Test comment -/
 example : 1 + 1 = 2 := by
   have : True := by sorry
   sorry
@@ -11,6 +12,7 @@ example : 1 + 1 = 2 := by
 
 ::::multilean
 ```lean
+/- Multilean comment -/
 example : 5 + 5 = 10 := by
 ```
 
