@@ -11,6 +11,11 @@ $$`x + y = z`
 This is a hint
 :::
 
+
+```lean
+def a := 5
+```
+
 ::::multilean
 ```lean
 def hello :=

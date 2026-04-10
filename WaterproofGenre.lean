@@ -81,6 +81,9 @@ open _root_.Verso.Genre.Manual in
 private abbrev importedInput : DirectiveExpander := input
 
 open _root_.Verso.Genre.Manual.InlineLean in
+private abbrev importedLean : CodeBlockExpanderOf LeanBlockConfig := lean
+
+open _root_.Verso.Genre.Manual.InlineLean in
 private abbrev importedMultilean : DirectiveExpanderOf LeanBlockConfig := multilean
 
 open _root_.Verso.Genre.Manual.InlineLean in
@@ -91,6 +94,9 @@ def hint : DirectiveExpander := importedHint
 
 @[directive_expander input]
 def input : DirectiveExpander := importedInput
+
+@[code_block]
+def lean : CodeBlockExpanderOf LeanBlockConfig := importedLean
 
 @[directive]
 def multilean : DirectiveExpanderOf LeanBlockConfig := importedMultilean
