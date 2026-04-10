@@ -10,6 +10,22 @@ open Verso.Genre.Manual
 open Verso.Genre.Manual.InlineLean
 open Lean.Doc.Syntax
 
+/-- The WaterproofGenre document genre is currently the Verso manual genre with
+custom extensions defined in this package. -/
+abbrev WaterproofGenre : Verso.Doc.Genre := Verso.Genre.Manual
+
+namespace WaterproofGenre
+
+abbrev Manual := Verso.Genre.Manual
+abbrev Config := Verso.Genre.Manual.Config
+abbrev HtmlSplitMode := Verso.Genre.Manual.HtmlSplitMode
+abbrev TraverseState := Verso.Genre.Manual.TraverseState
+abbrev TraverseContext := Verso.Genre.Manual.TraverseContext
+abbrev ExtraStep := Verso.Genre.Manual.ExtraStep
+abbrev manualMain := Verso.Genre.Manual.manualMain
+
+end WaterproofGenre
+
 namespace Verso.Genre.Manual
 
 block_extension Block.hint where
@@ -55,6 +71,34 @@ def input : DirectiveExpander
   | _, _ => Lean.Elab.throwUnsupportedSyntax
 
 end Verso.Genre.Manual
+
+namespace WaterproofGenre
+
+open _root_.Verso.Genre.Manual in
+private abbrev importedHint : DirectiveExpander := hint
+
+open _root_.Verso.Genre.Manual in
+private abbrev importedInput : DirectiveExpander := input
+
+open _root_.Verso.Genre.Manual.InlineLean in
+private abbrev importedMultilean : DirectiveExpanderOf LeanBlockConfig := multilean
+
+open _root_.Verso.Genre.Manual.InlineLean in
+private abbrev importedLeanSection : DirectiveExpander := leanSection
+
+@[directive_expander hint]
+def hint : DirectiveExpander := importedHint
+
+@[directive_expander input]
+def input : DirectiveExpander := importedInput
+
+@[directive]
+def multilean : DirectiveExpanderOf LeanBlockConfig := importedMultilean
+
+@[directive_expander leanSection]
+def leanSection : DirectiveExpander := importedLeanSection
+
+end WaterproofGenre
 
 -- /-! ## Chained LSP semantic token handler
 
