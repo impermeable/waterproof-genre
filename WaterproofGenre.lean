@@ -8,6 +8,7 @@ open Verso Doc Elab
 open Verso ArgParse
 open Verso.Genre.Manual
 open Verso.Genre.Manual.InlineLean
+open Lean.Doc.Syntax
 
 namespace Verso.Genre.Manual
 
@@ -38,7 +39,17 @@ def hint : DirectiveExpander
 @[directive_expander input]
 def input : DirectiveExpander
   | #[], stxs => do
-    let args ← stxs.mapM elabBlock
+    let args ← stxs.mapM fun stx => do
+      -- Lean code blocks inside `:::input` are fragments of a surrounding `::::multilean`
+      -- stream and cannot be type-checked independently.  Store them as raw code so that
+      -- the surrounding multilean expander can mask them out without triggering errors.
+      match stx with
+      | `(block|``` $nameStx:ident $_argsStx* | $contents:str ```) =>
+        if nameStx.getId == `lean then
+          ``(Verso.Doc.Block.code $(Lean.quote contents.getString))
+        else
+          elabBlock ⟨stx⟩
+      | _ => elabBlock ⟨stx⟩
     let val ← ``(Verso.Doc.Block.other Block.input #[ $[ $args ],* ])
     pure #[val]
   | _, _ => Lean.Elab.throwUnsupportedSyntax

@@ -1,4 +1,5 @@
 import WaterproofGenre
+open Verso.Genre.Manual
 open Verso.Genre.Manual.InlineLean
 
 #doc (Verso.Genre.Manual) "Index" =>
@@ -14,17 +15,17 @@ This is a hint
 ::::multilean
 ```lean
 def hello :=
-"Hello, " ++
+  "Hello, " ++
 ```
 
 :::input
 ```lean
-"World"
+  "World" ++
 ```
 :::
 
 ```lean
-++ "!"
+  "!"
 
 #eval hello
 ```
