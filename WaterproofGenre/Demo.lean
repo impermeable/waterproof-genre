@@ -52,3 +52,18 @@ theorem test : 5 + 5 = 10 := by
   sorry
 ```
 ::::
+
+
+::::multilean
+```lean
+def ex : 5 = 5 := by
+```
+:::input
+```lean
+  sorry
+```
+:::
+```lean
+  done
+```
+::::

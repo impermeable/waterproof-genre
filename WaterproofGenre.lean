@@ -9,6 +9,7 @@ open Verso ArgParse
 open Verso.Genre.Manual
 open Verso.Genre.Manual.InlineLean
 open Lean.Doc.Syntax
+open SubVerso.Highlighting
 
 /-- The WaterproofGenre document genre is currently the Verso manual genre with
 custom extensions defined in this package. -/
@@ -74,6 +75,8 @@ end Verso.Genre.Manual
 
 namespace WaterproofGenre
 
+open Lean  -- Brings Term, TSyntax, quote, getRef, getFileMap, getFileName, etc. into scope.
+
 open _root_.Verso.Genre.Manual in
 private abbrev importedHint : DirectiveExpander := hint
 
@@ -82,9 +85,6 @@ private abbrev importedInput : DirectiveExpander := input
 
 open _root_.Verso.Genre.Manual.InlineLean in
 private abbrev importedLean : CodeBlockExpanderOf LeanBlockConfig := lean
-
-open _root_.Verso.Genre.Manual.InlineLean in
-private abbrev importedMultilean : DirectiveExpanderOf LeanBlockConfig := multilean
 
 open _root_.Verso.Genre.Manual.InlineLean in
 private abbrev importedLeanSection : DirectiveExpander := leanSection
@@ -98,156 +98,198 @@ def input : DirectiveExpander := importedInput
 @[code_block]
 def lean : CodeBlockExpanderOf LeanBlockConfig := importedLean
 
-@[directive]
-def multilean : DirectiveExpanderOf LeanBlockConfig := importedMultilean
-
 @[directive_expander leanSection]
 def leanSection : DirectiveExpander := importedLeanSection
 
+-- Re-implementations of private Verso InlineLean functions needed for our custom multilean.
+
+private def wpExplanationMarker (idx : Nat) : String := s!"--{idx}"
+
+private def wpUtf8Size (str : String) : Nat :=
+  str.foldl (init := 0) fun acc c => acc + c.utf8Size
+
+private def wpBlankOfSameShape (str : String) : String := Id.run do
+  let mut out := ""
+  for c in str do
+    if c == '\n' then out := out.push '\n'
+    else for _ in [0:c.utf8Size] do out := out.push ' '
+  out
+
+private def wpLineCommentOfWidth (width : Nat) (marker : String) : String :=
+  if width = 0 then ""
+  else
+    -- Extract at most `width` UTF-8 bytes from marker (marker is ASCII so byte = char).
+    let mLen := min width marker.utf8ByteSize
+    let m := String.Pos.Raw.extract marker ⟨0⟩ ⟨mLen⟩
+    m ++ String.ofList (List.replicate (width - m.utf8ByteSize) ' ')
+
+private def wpExplanationPlaceholderSource (idx : Nat) (source : String) :
+    ExplanationPlaceholder × String :=
+  let marker := wpExplanationMarker idx
+  let lines := source.splitOn "\n" |>.toArray
+  let rendered := lines.mapIdx fun i line =>
+    let w := wpUtf8Size line
+    if i = 0 then wpLineCommentOfWidth w marker
+    else if w >= 2 then wpLineCommentOfWidth w "--"
+    else String.ofList (List.replicate w ' ')
+  let joined := Id.run do
+    let mut s := ""
+    for i in [0:rendered.size] do
+      s := if i = 0 then rendered[i]! else s ++ "\n" ++ rendered[i]!
+    s
+  ({ marker, lineCount := rendered.size }, joined)
+
+/--
+Build the combined Lean source for an `:::input` block inside `::::multilean`.
+
+The first line of the block becomes the placeholder marker comment (so that
+`splitMultileanCode` recognises the boundary), lean code inside the block is
+preserved at its original byte position (so that the whole concatenated source
+still elaborates), and all other lines are replaced with comment-shaped blanks.
+-/
+private def inputBlockSource
+    (idx : Nat) (sourceText : String)
+    (blockStart blockStop : String.Pos.Raw)
+    (innerBlocks : Array (TSyntax `block)) :
+    ExplanationPlaceholder × String :=
+  let marker := wpExplanationMarker idx
+  let blockStr := blockStart.extract sourceText blockStop
+  -- Collect lean code ranges as byte offsets relative to blockStart.
+  let leanRanges : Array (Nat × Nat) := innerBlocks.filterMap fun ib =>
+    match ib with
+    | `(block|``` $nameStx:ident $_args* | $contents:str ```) =>
+      if nameStx.getId != `lean then none
+      else
+        let cs := (contents.raw.getPos?.getD blockStart).byteIdx
+        let ce := (contents.raw.getTailPos?.getD blockStart).byteIdx
+        if cs < blockStart.byteIdx then none
+        else some (cs - blockStart.byteIdx, ce - blockStart.byteIdx)
+    | _ => none
+  -- Build the source line by line.
+  let lines := blockStr.splitOn "\n" |>.toArray
+  let out := Id.run do
+    let mut out := ""
+    let mut byteOffset := 0
+    for lineIdx in [0:lines.size] do
+      let line := lines[lineIdx]!
+      let lineLen := line.utf8ByteSize
+      let lineEnd := byteOffset + lineLen
+      -- Keep lines that overlap with any lean code range; blank everything else.
+      let inLean := leanRanges.any fun (ls, le) => ls < lineEnd && le > byteOffset
+      let rendered :=
+        if inLean then line
+        else
+          let w := wpUtf8Size line
+          if lineIdx = 0 then wpLineCommentOfWidth w marker
+          else if w >= 2 then wpLineCommentOfWidth w "--"
+          else String.ofList (List.replicate w ' ')
+      out := if lineIdx = 0 then rendered else out ++ "\n" ++ rendered
+      byteOffset := lineEnd + 1   -- +1 for the '\n' separator
+    out
+  ({ marker, lineCount := lines.size }, out)
+
+/-- Quote a `Highlighted` value into a term that reconstructs it at runtime. -/
+private def wpQuoteHighlight (hls : Highlighted) : DocElabM Term := do
+  let repr := hlToExport hls
+  ``(hlFromExport! $(quote repr))
+
+/-- Produce a `Block.multilean` block term from highlighting data and explanation content. -/
+private def wpToHighlightedMultileanBlock
+    (placeholders : Array ExplanationPlaceholder) (content : Array Term)
+    (shouldShow : Bool) (hls : Highlighted) : DocElabM Term := do
+  if !shouldShow then return ← ``(Block.concat #[])
+  let range := (← getRef).getRange? |>.map (← getFileMap).utf8RangeToLspRange
+  ``(Block.other
+      (Block.multilean
+        $(← wpQuoteHighlight hls)
+        $(quote placeholders)
+        (some $(quote (← getFileName)))
+        $(quote range))
+      #[$content,*])
+
+/--
+Custom `multilean` directive that extends the upstream Verso implementation to
+treat `:::input` blocks specially: lean code inside an `:::input` block is
+included in the combined source that gets elaborated (so it can contribute to
+type-checking), while the first line of the block is still replaced with the
+placeholder marker so that `splitMultileanCode` correctly demarcates the
+boundary for display purposes.
+-/
+@[directive]
+def multilean : DirectiveExpanderOf LeanBlockConfig
+  | config, blocks => do
+    let sourceText := (← getFileMap).source
+    let mut source := ""
+    let mut lastPos : String.Pos.Raw := 0
+    let mut placeholders : Array ExplanationPlaceholder := #[]
+    let mut explanationBlocks : Array Term := #[]
+    let mut leanBodies : Array StrLit := #[]
+    for block in blocks do
+      match block with
+      -- Direct lean code block inside ::::multilean
+      | `(block|``` $nameStx:ident $argsStx* | $contents:str ```) =>
+        if nameStx.getId == `lean then
+          let start := contents.raw.getPos?.getD lastPos
+          source := source ++ wpBlankOfSameShape (lastPos.extract sourceText start)
+          let stop := contents.raw.getTailPos?.getD start
+          if argsStx.size != 0 then
+            throwErrorAt nameStx "Lean blocks inside `:::multilean` do not support per-block arguments"
+          source := source ++ (start.extract sourceText stop)
+          leanBodies := leanBodies.push contents
+          lastPos := stop
+        else
+          let start := block.raw.getPos?.getD lastPos
+          source := source ++ wpBlankOfSameShape (lastPos.extract sourceText start)
+          let stop := block.raw.getTrailingTailPos?.getD start
+          let (placeholder, masked) := wpExplanationPlaceholderSource placeholders.size (start.extract sourceText stop)
+          source := source ++ masked
+          placeholders := placeholders.push placeholder
+          explanationBlocks := explanationBlocks.push (← elabBlock block)
+          lastPos := stop
+      -- :::input directive block: preserve lean code for elaboration, use
+      -- first line as placeholder marker for display splitting.
+      | `(block|::: $name $_args* { $innerBlocks* }) =>
+        if name.raw.getId == `input then
+          let blockStart := block.raw.getPos?.getD lastPos
+          source := source ++ wpBlankOfSameShape (lastPos.extract sourceText blockStart)
+          let blockStop := block.raw.getTrailingTailPos?.getD blockStart
+          let (placeholder, inputSrc) :=
+            inputBlockSource placeholders.size sourceText blockStart blockStop innerBlocks
+          source := source ++ inputSrc
+          placeholders := placeholders.push placeholder
+          explanationBlocks := explanationBlocks.push (← elabBlock block)
+          -- Track inner lean bodies so warnLongLines applies to them too.
+          for ib in innerBlocks do
+            if let `(block|``` $n:ident $_iba* | $c:str ```) := ib then
+              if n.getId == `lean then leanBodies := leanBodies.push c
+          lastPos := blockStop
+        else
+          -- Other directives: treat as opaque explanation blocks.
+          let start := block.raw.getPos?.getD lastPos
+          source := source ++ wpBlankOfSameShape (lastPos.extract sourceText start)
+          let stop := block.raw.getTrailingTailPos?.getD start
+          let (placeholder, masked) := wpExplanationPlaceholderSource placeholders.size (start.extract sourceText stop)
+          source := source ++ masked
+          placeholders := placeholders.push placeholder
+          explanationBlocks := explanationBlocks.push (← elabBlock block)
+          lastPos := stop
+      -- All other blocks (prose, headings, …): opaque explanation blocks.
+      | other =>
+        let start := other.raw.getPos?.getD lastPos
+        source := source ++ wpBlankOfSameShape (lastPos.extract sourceText start)
+        let stop := other.raw.getTrailingTailPos?.getD start
+        let (placeholder, masked) := wpExplanationPlaceholderSource placeholders.size (start.extract sourceText stop)
+        source := source ++ masked
+        placeholders := placeholders.push placeholder
+        explanationBlocks := explanationBlocks.push (← elabBlock other)
+        lastPos := stop
+    if leanBodies.isEmpty then
+      throwErrorAt (← getRef) "`:::multilean` requires at least one ```lean``` block"
+    for body in leanBodies do
+      if config.show then
+        let col? := body.raw.getPos? |>.map (← getFileMap).utf8PosToLspPos |>.map (·.character)
+        warnLongLines col? body
+    elabCommandsCore config source (← getRef) source
+      (wpToHighlightedMultileanBlock placeholders explanationBlocks)
+
 end WaterproofGenre
-
--- /-! ## Chained LSP semantic token handler
-
--- The Lean LSP marks Verso code block contents as `string` tokens. Verso's chained handler
--- intentionally omits code content tokens, expecting Lean to provide them. However, Lean's
--- info-based token collector only emits tokens for variables (TermInfo with fvar), not for
--- keywords. This means keywords like `let`, `have`, `by`, `sorry`, `example` get no semantic
--- tokens inside code blocks.
-
--- We fix this by chaining a third handler that walks the info trees pushed by the Manual genre's code
--- block elaborator to find keyword atoms in the elaborated Lean syntax and emits keyword tokens for them.
--- -/
--- section LspTokens
-
--- open Lean Server Lsp
--- open Lean.Server.FileWorker
-
--- /-- A semantic token entry with absolute line/char positions. -/
--- private structure TokenEntry where
---   line      : Nat
---   startChar : Nat
---   length    : Nat
---   type      : Nat
---   modMask   : Nat
-
--- private def TokenEntry.ordLt (a b : TokenEntry) : Bool :=
---   a.line < b.line || (a.line == b.line && a.startChar < b.startChar)
-
--- /-- Decode LSP delta-encoded token data into absolute-position entries. -/
--- private meta def decodeTokenData (data : Array Nat) : Array TokenEntry := Id.run do
---   let mut line := 0
---   let mut char := 0
---   let mut entries : Array TokenEntry := #[]
---   for i in [0:data.size:5] do
---     let #[dLine, dStart, len, ty, mods] := data[i:i+5].toArray
---       | return entries
---     line := line + dLine
---     char := if dLine == 0 then char + dStart else dStart
---     entries := entries.push ⟨line, char, len, ty, mods⟩
---   return entries
-
--- /-- Encode absolute-position entries back to LSP delta-encoded format. -/
--- private meta def encodeTokenData (entries : Array TokenEntry) : Array Nat := Id.run do
---   let mut data : Array Nat := #[]
---   let mut lastLine := 0
---   let mut lastChar := 0
---   for ⟨line, char, len, ty, mods⟩ in entries do
---     let dLine := line - lastLine
---     let dStart := if line == lastLine then char - lastChar else char
---     data := data ++ #[dLine, dStart, len, ty, mods]
---     lastLine := line; lastChar := char
---   return data
-
--- /-- Walk a syntax tree collecting keyword-like atoms that should receive semantic tokens.
--- Uses the same logic as `collectSyntaxBasedSemanticTokens` in the Lean LSP. -/
--- private meta partial def collectKeywordsFromSyntax
---     (text : FileMap) (stx : Syntax) : Array TokenEntry := Id.run do
---   if noHighlightKinds.contains stx.getKind then
---     return #[]
---   if docKinds.contains stx.getKind then
---     return #[]
---   let mut tokens : Array TokenEntry := #[]
---   if stx.isOfKind choiceKind then
---     tokens := collectKeywordsFromSyntax text stx[0]
---   else
---     for arg in stx.getArgs do
---       tokens := tokens ++ collectKeywordsFromSyntax text arg
---   let Syntax.atom _ val := stx
---     | return tokens
---   let isRegularKeyword := val.length > 0 && isIdFirst val.front
---   let isHashKeyword := val.length > 1 && val.front == '#' &&
---     isIdFirst (String.Pos.Raw.get val ⟨1⟩)
---   if !isRegularKeyword && !isHashKeyword then
---     return tokens
---   let (some startPos, some endPos) := (stx.getPos?, stx.getTailPos?)
---     | return tokens
---   let startLspPos := text.utf8PosToLspPos startPos
---   let endLspPos := text.utf8PosToLspPos endPos
---   if startLspPos.line != endLspPos.line then
---     return tokens
---   let tokenType : SemanticTokenType :=
---     if val == "sorry" || val == "admit" || val == "stop" || val == "#exit"
---     then .leanSorryLike
---     else .keyword
---   tokens := tokens.push ⟨
---     startLspPos.line,
---     startLspPos.character,
---     endLspPos.character - startLspPos.character,
---     tokenType.toNat,
---     0⟩
---   return tokens
-
--- /-- Walk an info tree to find all command syntax pushed by code block elaborators,
--- then extract keyword tokens from them. -/
--- private meta partial def collectKeywordsFromInfoTree
---     (text : FileMap) (tree : Elab.InfoTree) : Array TokenEntry := Id.run do
---   match tree with
---   | .context _ t => return collectKeywordsFromInfoTree text t
---   | .node info children =>
---     let mut tokens : Array TokenEntry := #[]
---     match info with
---     | .ofCommandInfo ci =>
---       if ci.elaborator == `Manual.Meta.lean then
---         tokens := tokens ++ collectKeywordsFromSyntax text ci.stx
---     | _ => pure ()
---     for child in children do
---       tokens := tokens ++ collectKeywordsFromInfoTree text child
---     return tokens
---   | .hole _ => return #[]
-
--- /-- Collect keyword tokens from all snapshots' info trees. -/
--- private meta def collectCodeBlockKeywords
---     (text : FileMap) (snaps : List Snapshots.Snapshot) : Array TokenEntry :=
---   snaps.foldl (init := #[]) fun acc snap =>
---     acc ++ collectKeywordsFromInfoTree text snap.infoTree
-
--- /-- Merge new keyword tokens into the existing LSP response token data. -/
--- private meta def mergeKeywordTokens (mine : Array TokenEntry) (existing : SemanticTokens) : Array Nat :=
---   let decoded := decodeTokenData existing.data
---   encodeTokenData ((decoded ++ mine).qsort TokenEntry.ordLt)
-
--- open RequestM in
--- private meta def handleCodeBlockTokensFull
---     (_params : SemanticTokensParams) (prev : LspResponse SemanticTokens) (st : SemanticTokensState) :
---     RequestM (LspResponse SemanticTokens × SemanticTokensState) := do
---   let doc ← readDoc
---   let text := doc.meta.text
---   let ctx ← read
---   let (snaps, _, isComplete) ← doc.cmdSnaps.getFinishedPrefixWithTimeout 2000
---     (cancelTks := ctx.cancelTk.cancellationTasks)
---   checkCancelled
---   let keywordTokens := collectCodeBlockKeywords text snaps
---   checkCancelled
---   let response : SemanticTokens := { prev.response with data := mergeKeywordTokens keywordTokens prev.response }
---   return ({ response, isComplete }, st)
-
--- meta initialize
---   chainStatefulLspRequestHandler
---     "textDocument/semanticTokens/full"
---     SemanticTokensParams
---     SemanticTokens
---     SemanticTokensState
---     handleCodeBlockTokensFull
---     handleSemanticTokensDidChange
-
--- end LspTokens
