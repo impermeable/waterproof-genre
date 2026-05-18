@@ -1,7 +1,7 @@
 import Lake
 open Lake DSL
 
-require «verso» from ".." / ".." / "verso"
+require «verso» from git "https://github.com/pimotte/verso"@"error-option-fix"
 
 meta if get_config? env != some "dev" then
   require «proofwidgets» from git "https://github.com/leanprover-community/ProofWidgets4"@"v0.0.90"
