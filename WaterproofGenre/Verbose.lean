@@ -21,7 +21,9 @@ Proof:
   Since c ∣ b we get n such that b = c * n
   Since b ∣ a we get m such that a = b * m
   Let's prove that n * m works
-  Since b = c * n and a = b * m we conclude that a = c * (n * m)
+  Calc
+    a = (c * n) * m since a = b * m and b = c * n
+    _ = c * (n * m) by computation
 QED
 ```
 ::::
@@ -61,7 +63,7 @@ Proof:
 ```
 :::input
 ```lean
-hint
+
 ```
 :::
 ```lean
@@ -79,7 +81,6 @@ Proof:
 ```
 :::input
 ```lean
-simp?
 
 ```
 :::
