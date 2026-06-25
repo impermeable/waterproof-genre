@@ -63,7 +63,7 @@ Proof:
 ```
 :::input
 ```lean
-
+  sorry
 ```
 :::
 ```lean
