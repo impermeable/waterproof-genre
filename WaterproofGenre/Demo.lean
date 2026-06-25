@@ -60,7 +60,6 @@ def ex : 5 = 5 := by
 ```
 :::input
 ```lean
-  simp?
   sorry
 ```
 :::
