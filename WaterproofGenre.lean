@@ -37,6 +37,14 @@ block_extension Block.hint where
     some <| fun _ goB _ _ content => do
       pure <| {{<div class="hint">{{← content.mapM goB}}</div>}}
 
+block_extension Block.studentHidden where
+  traverse := fun _ _ _ => pure none
+  toTeX := none
+  toHtml :=
+    open Verso.Output.Html in
+    some <| fun _ goB _ _ content => do
+      pure <| {{<div class="student-hidden">{{← content.mapM goB}}</div>}}
+
 block_extension Block.input where
   traverse := fun _ _ _ => pure none
   toTeX := none
@@ -51,6 +59,13 @@ def hint : DirectiveExpander
     let _title ← ArgParse.run ((some <$> .positional `title .string) <|> pure none) args
     let blocks ← contents.mapM elabBlock
     let val ← ``(Verso.Doc.Block.other Block.hint #[ $blocks ,* ])
+    pure #[val]
+
+@[directive_expander studentHidden]
+def studentHidden : DirectiveExpander
+  | _args, contents => do
+    let blocks ← contents.mapM elabBlock
+    let val ← ``(Verso.Doc.Block.other Block.studentHidden #[ $blocks ,* ])
     pure #[val]
 
 @[directive_expander input]
@@ -81,6 +96,9 @@ open _root_.Verso.Genre.Manual in
 private abbrev importedHint : DirectiveExpander := hint
 
 open _root_.Verso.Genre.Manual in
+private abbrev importedStudentHidden : DirectiveExpander := studentHidden
+
+open _root_.Verso.Genre.Manual in
 private abbrev importedInput : DirectiveExpander := input
 
 open _root_.Verso.Genre.Manual.InlineLean in
@@ -91,6 +109,9 @@ private abbrev importedLeanSection : DirectiveExpander := leanSection
 
 @[directive_expander hint]
 def hint : DirectiveExpander := importedHint
+
+@[directive_expander studentHidden]
+def studentHidden : DirectiveExpander := importedStudentHidden
 
 @[directive_expander input]
 def input : DirectiveExpander := importedInput
