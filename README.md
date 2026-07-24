@@ -28,10 +28,15 @@ environment**. On a fresh checkout you must resolve the dev dependencies once
 before building:
 
 ```sh
-lake -Kenv=dev update          # fetch verbose-lean4 (and its Mathlib dependency)
-lake -Kenv=dev exe cache get   # fetch the Mathlib build cache (optional but much faster)
+lake -Kenv=dev update                              # fetch verbose-lean4 (and its Mathlib dependency)
+lake -Kenv=dev -d .lake/packages/mathlib exe cache get  # fetch the Mathlib build cache (optional but much faster)
 lake -Kenv=dev exe test-verbose
 ```
+
+> **Note:** `cache` is Mathlib's own executable, so it must be run from the
+> Mathlib package directory (`-d .lake/packages/mathlib`). Running
+> `lake -Kenv=dev exe cache get` from the root fails with
+> `unknown executable cache`.
 
 > **Note:** `lake -Kenv=dev update` rewrites `lake-manifest.json` to the
 > dev dependency set. Do not commit that change — the committed manifest is the

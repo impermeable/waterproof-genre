@@ -31,8 +31,10 @@ jobs:
       # `verbose-lean4` dependency before building.
       - name: Resolve dev dependencies
         run: lake -Kenv=dev update
+      # `cache` is Mathlib's executable, so it must be run from the Mathlib
+      # package directory (the root package does not re-export it).
       - name: Fetch Mathlib cache
-        run: lake -Kenv=dev exe cache get
+        run: lake -Kenv=dev -d .lake/packages/mathlib exe cache get
       - name: Build Verbose library
         run: lake -Kenv=dev build WaterproofGenreVerbose
       - name: Run Verbose test
