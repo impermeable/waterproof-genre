@@ -63,10 +63,22 @@ def hint : DirectiveExpander
 
 @[directive_expander studentHidden]
 def studentHidden : DirectiveExpander
-  | _args, contents => do
-    let blocks ← contents.mapM elabBlock
-    let val ← ``(Verso.Doc.Block.other Block.studentHidden #[ $blocks ,* ])
+  | #[], stxs => do
+    let args ← stxs.mapM fun stx => do
+      -- Lean code blocks inside `:::studentHidden` are fragments of a surrounding
+      -- `::::multilean` stream and cannot be type-checked independently.  Store them
+      -- as raw code so that the surrounding multilean expander can mask them out
+      -- without triggering errors.
+      match stx with
+      | `(block|``` $nameStx:ident $_argsStx* | $contents:str ```) =>
+        if nameStx.getId == `lean then
+          ``(Verso.Doc.Block.code $(Lean.quote contents.getString))
+        else
+          elabBlock ⟨stx⟩
+      | _ => elabBlock ⟨stx⟩
+    let val ← ``(Verso.Doc.Block.other Block.studentHidden #[ $[ $args ],* ])
     pure #[val]
+  | _, _ => Lean.Elab.throwUnsupportedSyntax
 
 @[directive_expander input]
 def input : DirectiveExpander
@@ -267,10 +279,10 @@ def multilean : DirectiveExpanderOf LeanBlockConfig
           placeholders := placeholders.push placeholder
           explanationBlocks := explanationBlocks.push (← elabBlock block)
           lastPos := stop
-      -- :::input directive block: preserve lean code for elaboration, use
-      -- first line as placeholder marker for display splitting.
+      -- :::input / :::studentHidden directive block: preserve lean code for
+      -- elaboration, use first line as placeholder marker for display splitting.
       | `(block|::: $name $_args* { $innerBlocks* }) =>
-        if name.raw.getId == `input then
+        if name.raw.getId == `input || name.raw.getId == `studentHidden then
           let blockStart := block.raw.getPos?.getD lastPos
           source := source ++ wpBlankOfSameShape (lastPos.extract sourceText blockStart)
           let blockStop := block.raw.getTrailingTailPos?.getD blockStart
