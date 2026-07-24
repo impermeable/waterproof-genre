@@ -63,6 +63,14 @@ cached workspace configuration out of sync with the manifest.
   reuses it and silently skips the dev `require`. **`lake -Kenv=dev update` must
   be the first `lake` invocation** (this is why the CI `verbose` job configures
   `lean-action` not to resolve dependencies).
+  - In CI this same symptom is caused by a restored **GitHub Actions `.lake`
+    cache** containing a non-dev resolution. `lean-action`'s built-in cache is
+    keyed on the (non-dev) manifest and cannot be namespaced, so the `verbose`
+    job disables it (`use-github-cache: false`) and instead caches `.lake` under
+    a separate `dev-`prefixed key via an explicit `actions/cache` step. The
+    `demo` and `verbose` jobs therefore never share a cache. If an old poisoned
+    cache predates this setup, delete it once from the repo's Actions caches so
+    the new keys take over.
 
 **Fix:** clear Lake's cached per-configuration state and let it re-resolve
 against the current `lake-manifest.json`:
