@@ -6,9 +6,34 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  # Builds the default targets and runs the Demo elaboration test.
+  demo:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
       - uses: leanprover/lean-action@v1
+        with:
+          test: false
+      - name: Run Demo test
+        run: lake exe test-demo
+
+  # Builds the Verbose Lean integration (which needs the `dev` environment to
+  # pull in `verbose-lean4`) and runs its elaboration test.
+  verbose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
+      # The committed manifest is the non-dev one; resolve the dev-only
+      # `verbose-lean4` dependency before building.
+      - name: Resolve dev dependencies
+        run: lake -Kenv=dev update
+      - name: Fetch Mathlib cache
+        run: lake -Kenv=dev exe cache get
+      - name: Build Verbose library
+        run: lake -Kenv=dev build WaterproofGenreVerbose
+      - name: Run Verbose test
+        run: lake -Kenv=dev exe test-verbose

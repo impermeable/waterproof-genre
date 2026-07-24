@@ -70,21 +70,3 @@ Proof:
 QED
 ```
 ::::
-
-::::multilean
-```lean
-Example "test"
-  Given: (p q : Prop)
-  Assume: (_ : p ∧ q)
-  Conclusion: ∀ x : ℝ, q ∧ p
-Proof:
-```
-:::input
-```lean
-
-```
-:::
-```lean
-QED
-```
-::::
