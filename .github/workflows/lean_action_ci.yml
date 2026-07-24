@@ -22,12 +22,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Use lean-action only to install the Lean toolchain. It must NOT resolve
+      # dependencies here: its Mathlib-cache auto-detection would resolve the
+      # *non-dev* dependency set and cache a non-dev `lakefile.olean`, after
+      # which `lake -Kenv=dev update` silently skips the dev `require` and never
+      # fetches `verbose-lean4`/Mathlib.
       - uses: leanprover/lean-action@v1
         with:
+          auto-config: false
           build: false
           test: false
+          use-mathlib-cache: false
       # The committed manifest is the non-dev one; resolve the dev-only
-      # `verbose-lean4` dependency before building.
+      # `verbose-lean4` dependency (and its Mathlib dependency) before building.
+      # This must be the first `lake` invocation so the dev lakefile is what
+      # gets elaborated and cached.
       - name: Resolve dev dependencies
         run: lake -Kenv=dev update
       # `cache` is Mathlib's executable, so it must be run from the Mathlib

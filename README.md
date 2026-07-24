@@ -55,6 +55,14 @@ cached workspace configuration out of sync with the manifest.
   command (e.g. `lake exe test-demo`) after having built in `dev` mode.
 - `unknown module prefix 'Verbose'` / `No directory 'Verbose'` when the dev
   dependency hasn't been fetched, or when a stale non-dev config is being reused.
+- `lake -Kenv=dev update` fetches only the non-dev dependencies (`proofwidgets`
+  etc., but **not** `verbose-lean4`/Mathlib), and a later
+  `-d .lake/packages/mathlib` command fails with
+  `workspace directory not found: .lake/packages/mathlib`. This happens when a
+  non-dev `lake` command ran first and cached a non-dev `lakefile.olean`: Lake
+  reuses it and silently skips the dev `require`. **`lake -Kenv=dev update` must
+  be the first `lake` invocation** (this is why the CI `verbose` job configures
+  `lean-action` not to resolve dependencies).
 
 **Fix:** clear Lake's cached per-configuration state and let it re-resolve
 against the current `lake-manifest.json`:
