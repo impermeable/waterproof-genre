@@ -37,6 +37,14 @@ block_extension Block.hint where
     some <| fun _ goB _ _ content => do
       pure <| {{<div class="hint">{{← content.mapM goB}}</div>}}
 
+block_extension Block.studentHidden where
+  traverse := fun _ _ _ => pure none
+  toTeX := none
+  toHtml :=
+    open Verso.Output.Html in
+    some <| fun _ goB _ _ content => do
+      pure <| {{<div class="student-hidden">{{← content.mapM goB}}</div>}}
+
 block_extension Block.input where
   traverse := fun _ _ _ => pure none
   toTeX := none
@@ -52,6 +60,25 @@ def hint : DirectiveExpander
     let blocks ← contents.mapM elabBlock
     let val ← ``(Verso.Doc.Block.other Block.hint #[ $blocks ,* ])
     pure #[val]
+
+@[directive_expander studentHidden]
+def studentHidden : DirectiveExpander
+  | #[], stxs => do
+    let args ← stxs.mapM fun stx => do
+      -- Lean code blocks inside `:::studentHidden` are fragments of a surrounding
+      -- `::::multilean` stream and cannot be type-checked independently.  Store them
+      -- as raw code so that the surrounding multilean expander can mask them out
+      -- without triggering errors.
+      match stx with
+      | `(block|``` $nameStx:ident $_argsStx* | $contents:str ```) =>
+        if nameStx.getId == `lean then
+          ``(Verso.Doc.Block.code $(Lean.quote contents.getString))
+        else
+          elabBlock ⟨stx⟩
+      | _ => elabBlock ⟨stx⟩
+    let val ← ``(Verso.Doc.Block.other Block.studentHidden #[ $[ $args ],* ])
+    pure #[val]
+  | _, _ => Lean.Elab.throwUnsupportedSyntax
 
 @[directive_expander input]
 def input : DirectiveExpander
@@ -81,6 +108,9 @@ open _root_.Verso.Genre.Manual in
 private abbrev importedHint : DirectiveExpander := hint
 
 open _root_.Verso.Genre.Manual in
+private abbrev importedStudentHidden : DirectiveExpander := studentHidden
+
+open _root_.Verso.Genre.Manual in
 private abbrev importedInput : DirectiveExpander := input
 
 open _root_.Verso.Genre.Manual.InlineLean in
@@ -91,6 +121,9 @@ private abbrev importedLeanSection : DirectiveExpander := leanSection
 
 @[directive_expander hint]
 def hint : DirectiveExpander := importedHint
+
+@[directive_expander studentHidden]
+def studentHidden : DirectiveExpander := importedStudentHidden
 
 @[directive_expander input]
 def input : DirectiveExpander := importedInput
@@ -246,10 +279,10 @@ def multilean : DirectiveExpanderOf LeanBlockConfig
           placeholders := placeholders.push placeholder
           explanationBlocks := explanationBlocks.push (← elabBlock block)
           lastPos := stop
-      -- :::input directive block: preserve lean code for elaboration, use
-      -- first line as placeholder marker for display splitting.
+      -- :::input / :::studentHidden directive block: preserve lean code for
+      -- elaboration, use first line as placeholder marker for display splitting.
       | `(block|::: $name $_args* { $innerBlocks* }) =>
-        if name.raw.getId == `input then
+        if name.raw.getId == `input || name.raw.getId == `studentHidden then
           let blockStart := block.raw.getPos?.getD lastPos
           source := source ++ wpBlankOfSameShape (lastPos.extract sourceText blockStart)
           let blockStop := block.raw.getTrailingTailPos?.getD blockStart
