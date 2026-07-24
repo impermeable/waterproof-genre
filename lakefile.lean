@@ -25,3 +25,8 @@ lean_lib WaterproofGenreVerbose where
 
 lean_exe "test-demo" where
   root := `TestDemoMain
+
+-- Only buildable in the `dev` environment, since it exercises the Verbose Lean
+-- integration which depends on `verbose-lean4`.
+lean_exe "test-verbose" where
+  root := `TestVerboseMain

@@ -40,7 +40,7 @@ open Lean Meta Elab Command in
 
   -- Walk the proof expression looking for a lambda binder whose type contains
   -- `1 + 2 = 3`, which corresponds to the `have : 1 + 2 = 3` sub-goal.
-  let some val := ci.value?
+  let some val := ci.value? (allowOpaque := true)
     | throwError "'test' has no proof term (is it an axiom?)"
 
   let mut foundSubgoal := false
