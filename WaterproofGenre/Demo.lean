@@ -17,12 +17,12 @@ def a := 5
 ```
 
 ::::multilean
--- :::studentHidden
+:::studentHidden
 ```lean
 def hello :=
   "Hello, " ++
 ```
--- :::
+:::
 
 :::input
 ```lean

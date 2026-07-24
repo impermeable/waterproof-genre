@@ -36,6 +36,11 @@ Example "1.1.8"
   Conclusion: (p ∧ q) ∧ r
 Proof:
 ```
+:::studentHidden
+```lean
+  -- The first part of the proof is hidden from the student.
+```
+:::
 :::input
 ```lean
   Let's first prove that p ∧ q
