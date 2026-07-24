@@ -1,8 +1,13 @@
 import Lake
 open Lake DSL
 
-require «verso» from git "https://github.com/leanprover/verso.git"@"v4.29.0-rc3"
-require «proofwidgets» from git "https://github.com/leanprover-community/ProofWidgets4"@"v0.0.90"
+require «verso» from git "https://github.com/pimotte/verso"@"error-option-fix-v4.31.0"
+
+meta if get_config? env != some "dev" then
+  require «proofwidgets» from git "https://github.com/leanprover-community/ProofWidgets4"@"v0.0.102"
+
+meta if get_config? env = some "dev" then
+  require «verbose-lean4» from git "https://github.com/PatrickMassot/verbose-lean4"@"v4.31.0"
 
 package "WaterproofGenre" where
   version := v!"0.1.0"
@@ -15,5 +20,13 @@ lean_lib WaterproofGenre where
 lean_exe "waterproofgenre" where
   root := `WaterproofGenreMain
 
+lean_lib WaterproofGenreVerbose where
+  roots := #[`WaterproofGenre.Verbose]
+
 lean_exe "test-demo" where
   root := `TestDemoMain
+
+-- Only buildable in the `dev` environment, since it exercises the Verbose Lean
+-- integration which depends on `verbose-lean4`.
+lean_exe "test-verbose" where
+  root := `TestVerboseMain

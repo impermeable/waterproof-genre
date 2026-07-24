@@ -1,4 +1,5 @@
 import WaterproofGenre
+open WaterproofGenre
 
 #doc (WaterproofGenre) "Index" =>
 
@@ -10,20 +11,27 @@ $$`x + y = z`
 This is a hint
 :::
 
+
+```lean
+def a := 5
+```
+
 ::::multilean
+:::studentHidden
 ```lean
 def hello :=
-"Hello, " ++
+  "Hello, " ++
 ```
+:::
 
 :::input
 ```lean
-"World"
+  "World" ++
 ```
 :::
 
 ```lean
-++ "!"
+  "!"
 
 #eval hello
 ```
@@ -44,5 +52,20 @@ theorem test : 5 + 5 = 10 := by
 
 ```lean
   sorry
+```
+::::
+
+
+::::multilean
+```lean
+def ex : 5 = 5 := by
+```
+:::input
+```lean
+  sorry
+```
+:::
+```lean
+  done
 ```
 ::::

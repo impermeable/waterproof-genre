@@ -1,14 +1,62 @@
 name: Lean Action CI
 
 on:
-  push:
   pull_request:
   workflow_dispatch:
 
 jobs:
-  build:
+  # Builds the default targets and runs the Demo elaboration test.
+  demo:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
       - uses: leanprover/lean-action@v1
+        with:
+          test: false
+      - name: Run Demo test
+        run: lake exe test-demo
+
+  # Builds the Verbose Lean integration (which needs the `dev` environment to
+  # pull in `verbose-lean4`) and runs its elaboration test.
+  verbose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Use lean-action only to install the Lean toolchain. It must NOT resolve
+      # dependencies or manage the GitHub cache here: its Mathlib-cache
+      # auto-detection would resolve the *non-dev* dependency set, and its
+      # built-in `.lake` cache is keyed on the (non-dev) manifest — either would
+      # cache a non-dev resolution, after which `lake -Kenv=dev update` silently
+      # skips the dev `require` and never fetches `verbose-lean4`/Mathlib.
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          test: false
+          use-mathlib-cache: false
+          use-github-cache: false
+      # Cache the dev `.lake` under a `dev-`prefixed key so it never collides
+      # with the demo job's (non-dev) cache. lean-action can't namespace its own
+      # cache key, so we manage this one explicitly. The key is invalidated when
+      # the lakefile or toolchain changes (the committed manifest is non-dev, so
+      # it is not a useful key input here).
+      - name: Cache dev .lake
+        uses: actions/cache@v4
+        with:
+          path: .lake
+          key: dev-lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lakefile.lean', 'lean-toolchain') }}
+      # The committed manifest is the non-dev one; resolve the dev-only
+      # `verbose-lean4` dependency (and its Mathlib dependency) before building.
+      # This must be the first `lake` invocation so the dev lakefile is what
+      # gets elaborated and cached. On a cache hit the dev packages already
+      # exist and this reconciles the manifest; on a miss it fetches them.
+      - name: Resolve dev dependencies
+        run: lake -Kenv=dev update
+      # `cache` is Mathlib's executable, so it must be run from the Mathlib
+      # package directory (the root package does not re-export it).
+      - name: Fetch Mathlib cache
+        run: lake -Kenv=dev -d .lake/packages/mathlib exe cache get
+      - name: Build Verbose library
+        run: lake -Kenv=dev build WaterproofGenreVerbose
+      - name: Run Verbose test
+        run: lake -Kenv=dev exe test-verbose
